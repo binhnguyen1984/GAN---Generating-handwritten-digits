@@ -32,62 +32,34 @@ def generator(z, reuse=None):
         g1 = tf.contrib.layers.batch_norm(g1, epsilon=1e-5, scope='bn1')
         g1 = tf.nn.relu(g1)
     
-        # Generate 50 features
+        # 1st conv layer
         g2 = create_conv2d("conv2", g1, [3,3,1, z_dim/2], strides = [1,2,2,1])
         g2 = tf.image.resize_images(g2, [56, 56])
     
-        # Generate 25 features
+        # 2nd conv layer
         g3 = create_conv2d("conv3", g2, [3, 3, z_dim/2, z_dim/4], strides = [1,2,2,1])
         g3 = tf.image.resize_images(g3, [56, 56])
     
-        # Final convolution with one output channel
+        # 3rd conv layer
         g4 = create_conv2d("conv4", g3, [1, 1, z_dim/4, 1], strides = [1,2,2,1])
         g4 = tf.sigmoid(g4)
-    
-        # No batch normalization at the final layer, but we do add
-        # a sigmoid activator to make the generated images crisper.
-        # Dimensions of g4: batch_size x 28 x 28 x 1
     return g4
     
 def discriminator(X,reuse=None):
     with tf.variable_scope('dis',reuse=reuse):
-        # First convolutional and pool layers
-        # These search for 32 different 5 x 5 pixel features
-        #We’ll start off by passing the image through a convolutional layer. 
-        #First, we create our weight and bias variables through tf.get_variable. 
-        #Our first weight matrix (or filter) will be of size 5x5 and will have a output depth of 32. 
-        #It will be randomly initialized from a normal distribution.
+        # 1st conv layer
         d1 = create_conv2d('conv1', X, [5,5,1,32], strides=[1,1,1,1], b_initializer=tf.constant_initializer(0))
-        #tf.nn.conv2d() is the Tensorflow’s function for a common convolution.
-        #It takes in 4 arguments. The first is the input volume (our 28 x 28 x 1 image in this case). 
-        #The next argument is the filter/weight matrix. Finally, you can also change the stride and 
-        #padding of the convolution. Those two values affect the dimensions of the output volume.
-        #"SAME" tries to pad evenly left and right, but if the amount of columns to be added is odd, 
-        #it will add the extra column to the right,
-        #strides = [batch, height, width, channels]
-        
-        ##An average pooling layer performs down-sampling by dividing the input into 
-        #rectangular pooling regions and computing the average of each region. 
-        #It returns the averages for the pooling regions.
         d1 = tf.nn.max_pool(d1, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1], padding='SAME')
     
-        #As with any convolutional neural network, this module is repeated, 
-        # Second convolutional and pool layers
-        # These search for 64 different 5 x 5 pixel features
+        #2nd conv layer
         d2 = create_conv2d('conv2', d1, [5,5, 32, 64], strides=[1,1,1,1], b_initializer=tf.constant_initializer(0))
         d2 = tf.nn.max_pool(d2, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1], padding='SAME')
     
-         #and then followed by a series of fully connected layers. 
-        # First fully connected layer
+        # 1st fully connected layer
         d3 = create_fully_connected('fully_connected1', tf.reshape(d2,(-1,7 * 7 * 64 )), [7 * 7 * 64, 1024])
         
-        #The last fully-connected layer holds the output, such as the class scores.
-        # Second fully connected layer
+        # 2nd fully connected layer
         logits = create_fully_connected("fully_connected2", d3, [1024,1])
-        #At the end of the network, we do a final matrix multiply and 
-        #return the activation value. 
-        #For those of you comfortable with CNNs, this is just a simple binary classifier. Nothing fancy.
-        # logits dimensions: batch_size x 1
         output = tf.sigmoid(logits)
     return output, logits    
 
@@ -129,7 +101,7 @@ saver = tf.train.Saver()
 
 with tf.Session() as sess:
     try:
-        saver.restore(sess, 'model.ckpt')
+        saver.restore(sess, './model.ckpt')
     except Exception:
         sess.run(init)
     for epoch in range(epochs):
@@ -137,20 +109,15 @@ with tf.Session() as sess:
         for i in range(num_batches):
             batch=mnist.train.next_batch(batch_size)
             batch_images=batch[0].reshape((batch_size,28,28,1))
-            batch_images=batch_images*2-1
             batch_z= np.random.normal(size=[batch_size, 100]) 
-            _, d_loss=sess.run([D_trainer, D_loss],feed_dict={real_images:batch_images,z:batch_z})
-            _, g_loss=sess.run([G_trainer, G_loss],feed_dict={z:batch_z})
-            
-        print("on epoch{}, d_loss:{}, g_loss:{}".format(epoch, d_loss, g_loss))
-        
+            _, d_loss=sess.run([D_trainer, D_loss],feed_dict={real_images:batch_images,z:batch_z})            
         sample_z=np.random.normal(size=[1, 100])
-        gen_sample=sess.run(generator(z,reuse=True),feed_dict={z:sample_z})
-        
+        _, g_loss=sess.run([G_trainer, G_loss],feed_dict={z:batch_z})        
+        print("on epoch{}, d_loss:{}, g_loss:{}".format(epoch, d_loss, g_loss))
+        gen_sample=sess.run(generator(z,reuse=True),feed_dict={z:sample_z})       
         samples.append(gen_sample)
-    save_path = saver.save('model.ckpt')
+    save_path = saver.save(sess, './model.ckpt')
 
 plt.imshow(samples[0])
-
 plt.imshow(samples[9])
 
